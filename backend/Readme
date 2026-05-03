@@ -1,0 +1,24 @@
+1. SetUp
+
+Terminal - first setup environment
+1) python -m venv venv
+2) venv\Scripts\activate
+3) pip install "fastapi[standard]"
+4) Pip install uvicorn
+
+Now create a folder app/main.py 
+Write some hello world code and try to do this
+
+5) uvicorn app.main:app --reload 
+
+
+2)  Features
+
+  1) Automatic - Documentation - if we just go to http://127.0.0.1:8000/docs  here /docs will give us swagger api built in so its so easy for development
+            - Swagger api - /docs
+            - ReDoc api - /redoc
+
+
+- Security Authentication
+- Dependency Injection
+- Testing 100% Coverage
