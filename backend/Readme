@@ -22,3 +22,10 @@ Write some hello world code and try to do this
 - Security Authentication
 - Dependency Injection
 - Testing 100% Coverage
+
+3) GET Method overview
+
+- Path Variables = Path variables are values passed directly inside the URL path.
+- Predefined Values = You can restrict a path variable to predefined options.
+- Query Parameters = Query parameters are added after ? in the URL.
+
