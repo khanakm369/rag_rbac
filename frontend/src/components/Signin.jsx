@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 
 const Signin = () => {
@@ -9,6 +9,14 @@ const Signin = () => {
     password: ""
   })
 
+  // 🔁 Auto redirect if already logged in
+  useEffect(() => {
+    const token = localStorage.getItem("token")
+    if (token) {
+      navigate("/promt")
+    }
+  }, [navigate])
+
   const handleChange = (e) => {
     setFormData({
       ...formData,
@@ -18,6 +26,11 @@ const Signin = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+
+    if (!formData.username || !formData.password) {
+      alert("Please fill all fields")
+      return
+    }
 
     try {
       const res = await fetch("http://127.0.0.1:8000/token", {
@@ -38,7 +51,7 @@ const Signin = () => {
       // ✅ Save token
       localStorage.setItem("token", data.access_token)
 
-      // ✅ Redirect after login
+      // ✅ Correct navigation (absolute path)
       navigate("/promt")
 
     } catch (err) {
@@ -49,13 +62,22 @@ const Signin = () => {
 
   return (
     <div>
-      <form onSubmit={handleSubmit} style={{ display: "grid", gap: "10px", width: "300px", margin: "auto" }}>
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          display: "grid",
+          gap: "10px",
+          width: "300px",
+          margin: "auto"
+        }}
+      >
         <h2>Sign In</h2>
 
         <input
           type="text"
           name="username"
           placeholder="Enter username"
+          value={formData.username}
           onChange={handleChange}
         />
 
@@ -63,6 +85,7 @@ const Signin = () => {
           type="password"
           name="password"
           placeholder="Enter password"
+          value={formData.password}
           onChange={handleChange}
         />
 

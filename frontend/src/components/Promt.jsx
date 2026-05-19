@@ -33,6 +33,7 @@ const Promt = () => {
   return (
     <div>
       <h2>Prompt</h2>
+ 
 
       <input
         type='text'

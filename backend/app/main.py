@@ -1,8 +1,8 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pymongo import MongoClient
-from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
 import bcrypt
@@ -16,19 +16,7 @@ app = FastAPI()
 # =========================
 load_dotenv()
 
-origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # for testing
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-MONGO_URI = os.getenv("MONGO_URI")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 SECRET_KEY = os.getenv("SECRET_KEY", "supersecret")
 ALGORITHM = "HS256"
 
@@ -39,7 +27,23 @@ users_collection = db["tblusers"]
 roles_collection = db["tblroles"]
 
 # =========================
-# Models (JSON Input)
+# CORS FIX (IMPORTANT)
+# =========================
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,   # ✅ NOT "*"
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# =========================
+# Models
 # =========================
 class SignupRequest(BaseModel):
     username: str
@@ -51,45 +55,39 @@ class LoginRequest(BaseModel):
     password: str
 
 # =========================
-# OAuth2 (Bearer Token)
+# OAuth2
 # =========================
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # =========================
 # JWT Helpers
 # =========================
-def create_access_token(data: dict, expires_delta: int = 60):
+def create_access_token(data: dict, expires_minutes: int = 60):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=expires_delta)
+    expire = datetime.utcnow() + timedelta(minutes=expires_minutes)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def decode_token(token: str):
+def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    payload = decode_token(token)
-    return payload
 
 # =========================
 # Home
 # =========================
 @app.get("/")
 def home():
-    return {"message": "FastAPI + MongoDB + JWT 🚀"}
+    return {"message": "API Running 🚀"}
 
 # =========================
-# Init Roles (Run once)
+# Roles
 # =========================
-
 @app.get("/roles")
 def get_roles():
     roles = [r["role_name"] for r in roles_collection.find()]
     return {"roles": roles}
-
 
 @app.get("/init-roles")
 def init_roles():
@@ -100,27 +98,55 @@ def init_roles():
     return {"message": "Roles initialized"}
 
 # =========================
-# Signup (JSON)
+# Signup (hash password)
 # =========================
-@app.post("/signin")
-def signin(data: LoginRequest):
-    # 1. Find user in DB
+@app.post("/signup")
+def signup(data: SignupRequest):
+    role = data.role.strip()
+
+    if not roles_collection.find_one({"role_name": role}):
+        raise HTTPException(status_code=400, detail="Invalid role")
+
+    if users_collection.find_one({"username": data.username}):
+        raise HTTPException(status_code=400, detail="User already exists")
+
+    # 🔐 HASH PASSWORD
+    hashed_password = bcrypt.hashpw(data.password.encode(), bcrypt.gensalt())
+
+    users_collection.insert_one({
+        "username": data.username,
+        "password": hashed_password,  # stored as bytes
+        "role": role
+    })
+
+    return {"message": "User created successfully"}
+
+# =========================
+# Login (JWT)
+# =========================
+@app.post("/token")
+def login(data: LoginRequest):
     user = users_collection.find_one({"username": data.username})
 
     if not user:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    # 2. Verify password
- #   if not bcrypt.checkpw(data.password.encode(), user["password"]):
-  #      raise HTTPException(status_code=401, detail="Invalid username or password")
+    # ✅ SAFE PASSWORD CHECK
+    stored_password = user["password"]
 
-    # 3. Create token
+    # Handle both cases (old plain text + new hashed)
+    if isinstance(stored_password, str):
+        if data.password != stored_password:
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+    else:
+        if not bcrypt.checkpw(data.password.encode(), stored_password):
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+
     token = create_access_token({
         "username": user["username"],
         "role": user["role"]
     })
 
-    # 4. Return token
     return {
         "access_token": token,
         "token_type": "bearer"
@@ -137,33 +163,10 @@ def profile(user=Depends(get_current_user)):
     }
 
 # =========================
-# Role-based Example
+# Role-based Route
 # =========================
 @app.get("/admin")
-def admin_only(user=Depends(get_current_user)):
+def admin(user=Depends(get_current_user)):
     if user["role"] != "C-Level":
         raise HTTPException(status_code=403, detail="Access denied")
     return {"message": "Welcome Admin 🎯"}
-
-
-@app.post("/token")
-def login(data: LoginRequest):
-    user = users_collection.find_one({"username": data.username})
-
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-
-    # ✅ Make sure password is hashed in DB
-    if not bcrypt.checkpw(data.password.encode(), user["password"]):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-
-    token = create_access_token({
-        "username": user["username"],
-        "role": user["role"]
-    })
-
-    return {
-        "access_token": token,
-        "token_type": "bearer"
-    }
-
